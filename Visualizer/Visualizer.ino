@@ -66,8 +66,17 @@ void setRandomColors() {
   }
 }
 
+void showRGBColor(CRGB color){
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = color;
+  }
+  FastLED.show();
+}
+
 void clearLEDS(){
-  FastLED.clear();
+  for(int i = 0; i < NUM_LEDS; i++){
+    leds[i].fadeToBlackBy(64);
+  }
   FastLED.show();
 }
 
