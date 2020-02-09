@@ -23,8 +23,7 @@
 
 CRGB leds[NUM_LEDS];
 
-// Default values to off
-int r = 0, g = 0, b = 0;
+int r,g,b;
 
 int mode = OFF;
 int waveMode = FLOW; // Wave sub-mode
@@ -100,7 +99,9 @@ void fall(byte red, byte green, byte blue, int WaveDelay) {
     }
     FastLED.show();
     blynk_delay(WaveDelay);
-    if (mode != WAVES || waveMode != FALL) { return; }
+    if (mode != WAVES || waveMode != FALL) {
+      return;
+    }
   }
 }
 
@@ -109,14 +110,16 @@ void rainbowCycle(int SpeedDelay) {
   byte *c;
   uint16_t i, j;
 
-  for(j = 0; j < 256 * 5; j++) { // 5 cycles of all colors on wheel
-    for(i = 0; i < NUM_LEDS; i++) {
+  for (j = 0; j < 256 * 5; j++) { // 5 cycles of all colors on wheel
+    for (i = 0; i < NUM_LEDS; i++) {
       c = Wheel(((i * 256 / NUM_LEDS) + j) & 255);
       leds[i] = CRGB(*c, *(c + 1), *(c + 2));
     }
     FastLED.show();
     blynk_delay(SpeedDelay);
-    if (mode != WAVES || waveMode != RAINBOW) { return; }
+    if (mode != WAVES || waveMode != RAINBOW) {
+      return;
+    }
   }
 }
 
@@ -158,7 +161,9 @@ void flow() {
       }
       FastLED.show();
       blynk_delay(3);
-      if (mode != WAVES || waveMode != FLOW) { return; }
+      if (mode != WAVES || waveMode != FLOW) {
+        return;
+      }
     }
     // Fade OUT
     for (int k = 255; k >= 0; k--) {
@@ -181,7 +186,9 @@ void flow() {
       }
       FastLED.show();
       blynk_delay(3);
-      if (mode != WAVES || waveMode != FLOW) { return; }
+      if (mode != WAVES || waveMode != FLOW) {
+        return;
+      }
     }
   }
 }
@@ -189,6 +196,9 @@ void flow() {
 // Mode Picker
 BLYNK_WRITE(V0) {
   mode = param.asInt();
+  if(mode == STATIC){
+    Blynk.syncVirtual(V3); // Sync RGB control
+  }
 }
 
 // Wave-Mode Picker
@@ -205,6 +215,11 @@ BLYNK_WRITE(V3) {
     staticColor(r, g, b);
   }
 }
+
+BLYNK_CONNECTED() {
+  Blynk.syncAll();
+}
+
 
 byte * Wheel(byte WheelPos) {
   static byte c[3];
