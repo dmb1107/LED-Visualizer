@@ -9,7 +9,7 @@
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
 
-#define MIC_PIN 17 // A0
+#define MIC_PIN 0 // A0
 
 // Modes
 #define OFF 1
@@ -38,6 +38,10 @@ char auth[] = "KDzz0yZ-CWm38Xll10KSb6lqGKLIuKMs";
 // WiFi credentials
 char ssid[] = "A Hint of Lime 2.4GHz";
 char pass[] = "BeIrJoMaOl69420";
+
+//Microphone Settings
+const int sampleWindow = 50; // Sample window width in mS (50 mS = 20Hz)
+unsigned int sample;
 
 void setup()
 {
@@ -70,13 +74,13 @@ void loop()
       waves();
       break;
     case MUSIC:
-      // TODO: Implement
+      musicReactive();
       break;
   }
 }
 
 /*
-* Section: Modes
+  Section: Modes
 */
 
 // Static Mode
@@ -100,8 +104,55 @@ void waves() {
   }
 }
 
+// Music mode
+void musicReactive() {
+  unsigned long startMillis = millis(); // Start of sample window
+  unsigned int peakToPeak = 0;   // peak-to-peak level
+
+  unsigned int signalMax = 0;
+  unsigned int signalMin = 1024;
+
+  // Collect data for 50 mS
+  while (millis() - startMillis < sampleWindow)  {
+    sample = analogRead(MIC_PIN);
+    blynk_delay(4);    //Need this delay otherwise esp8266 gets locked up.
+    if (mode != MUSIC) {
+      return;
+    }
+    yield();
+    if (sample < 1024)  {
+      if (sample > signalMax) {
+        signalMax = sample;  // save just the max levels
+      }
+      else if (sample < signalMin) {
+        signalMin = sample;  // save just the min levels
+      }
+    }
+  }
+  peakToPeak = signalMax - signalMin;  // max - min = peak-peak amplitude
+  double volts = (peakToPeak * 5.0) / 1024;  // convert to volts
+  double pixelNum = (NUM_LEDS / 4.95) * volts; // 4.95 is max volts, so normalize to NUM_LEDS
+
+  // Cap at 60 just in case
+  if (pixelNum >= NUM_LEDS) {
+    pixelNum = NUM_LEDS;
+  }
+
+  // Set pixels to color
+  for (int i = 0; i < pixelNum; i++) {
+    leds[i] = CRGB::Blue;
+  }
+
+  // Clear other LEDS
+  for (int i = pixelNum; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Black;
+  }
+
+  FastLED.show();
+}
+
 /*
-* Section: Wave Modes
+  Section: Wave Modes
 */
 
 // Wave Mode -> Fall
@@ -198,13 +249,13 @@ void flow() {
 }
 
 /*
-* Section: Blynk
+  Section: Blynk
 */
 
 // Mode Picker
 BLYNK_WRITE(V0) {
   mode = param.asInt();
-  if(mode == STATIC){
+  if (mode == STATIC) {
     Blynk.syncVirtual(V3); // Sync RGB control
   }
 }
@@ -238,7 +289,7 @@ void blynk_delay(int milli) {
 }
 
 /*
-* Section: Helpers
+  Section: Helpers
 */
 
 // Sets all LEDS to given color, Not displayed
