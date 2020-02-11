@@ -9,6 +9,8 @@
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
 
+#define MIC_PIN 17 // A0
+
 // Modes
 #define OFF 1
 #define STATIC 2
@@ -20,11 +22,13 @@
 #define FALL 2
 #define RAINBOW 3
 
-
+// LED strip
 CRGB leds[NUM_LEDS];
 
-int r,g,b;
+// Current static colors
+int r, g, b;
 
+// Default mode and wave-mode values
 int mode = OFF;
 int waveMode = FLOW; // Wave sub-mode
 
@@ -40,7 +44,7 @@ void setup()
   // Debug console
   Serial.begin(9600);
 
-  // Set up LEDs
+  // Set up FastLED LED strip
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
 
   // Connect to Blynk
@@ -53,26 +57,35 @@ void loop()
   Blynk.run();
 
   switch (mode) {
-    case OFF: {
-        setAllLEDS(0, 0, 0);
-        FastLED.show();
-        break;
-      }
-    case STATIC: {
-        staticColor(r, g, b);
-        break;
-      }
-    case WAVES: {
-        waves();
-        break;
-      }
-    case MUSIC: {
-        break;
-      }
+    case OFF:
+      // Set LEDS to black
+      setAllLEDS(0, 0, 0);
+      FastLED.show();
+      break;
+    case STATIC:
+      // Set LEDS to static RGB values
+      staticColor(r, g, b);
+      break;
+    case WAVES:
+      waves();
+      break;
+    case MUSIC:
+      // TODO: Implement
+      break;
   }
 }
 
-// Mode 3
+/*
+* Section: Modes
+*/
+
+// Static Mode
+void staticColor(int red, int green, int blue) {
+  setAllLEDS(red, green, blue);
+  FastLED.show();
+}
+
+// Waves Mode
 void waves() {
   switch (waveMode) {
     case FLOW:
@@ -87,13 +100,17 @@ void waves() {
   }
 }
 
-// waveMode 2
+/*
+* Section: Wave Modes
+*/
+
+// Wave Mode -> Fall
+// Modified from: https://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#LEDStripEffectRunningLights
 void fall(byte red, byte green, byte blue, int WaveDelay) {
   int Position = 0;
   for (int j = 0; j < NUM_LEDS * 2; j++) {
-    Position++; // = 0; //Position + Rate;
+    Position++;
     for (int i = 0; i < NUM_LEDS; i++) {
-      // sine wave, 3 offset waves make a rainbow!
       float level = sin(i + Position) * 127 + 128;
       leds[i] = CRGB(level / 255 * red, level / 255 * green, level / 255 * blue);
     }
@@ -105,7 +122,8 @@ void fall(byte red, byte green, byte blue, int WaveDelay) {
   }
 }
 
-// waveMode 3
+// Wave Mode -> RainbowCycle
+// Modified from: https://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#LEDStripEffectRainbowCycle
 void rainbowCycle(int SpeedDelay) {
   byte *c;
   uint16_t i, j;
@@ -123,21 +141,7 @@ void rainbowCycle(int SpeedDelay) {
   }
 }
 
-
-// Updates LEDS to static color
-// Mode 2
-void staticColor(int red, int green, int blue) {
-  // Change colors
-  setAllLEDS(red, green, blue);
-  FastLED.show();
-}
-
-// sets all LEDS to given color, Not displayed
-void setAllLEDS(int red, int green, int blue) {
-  fill_solid(leds, NUM_LEDS, CRGB(red, green, blue));
-}
-
-// Wave Mode flow
+// Wave Mode -> Flow
 void flow() {
   for (int j = 0; j < 3; j++ ) {
     // Fade IN
@@ -193,6 +197,10 @@ void flow() {
   }
 }
 
+/*
+* Section: Blynk
+*/
+
 // Mode Picker
 BLYNK_WRITE(V0) {
   mode = param.asInt();
@@ -216,11 +224,29 @@ BLYNK_WRITE(V3) {
   }
 }
 
+// Sync when Blynk connects
 BLYNK_CONNECTED() {
   Blynk.syncAll();
 }
 
+// Delay without stopping processes
+void blynk_delay(int milli) {
+  int end = millis() + milli;
+  while (millis() < end) {
+    Blynk.run();
+  }
+}
 
+/*
+* Section: Helpers
+*/
+
+// Sets all LEDS to given color, Not displayed
+void setAllLEDS(int red, int green, int blue) {
+  fill_solid(leds, NUM_LEDS, CRGB(red, green, blue));
+}
+
+// Color wheel
 byte * Wheel(byte WheelPos) {
   static byte c[3];
   if (WheelPos < 85) {
@@ -239,12 +265,4 @@ byte * Wheel(byte WheelPos) {
     c[2] = 255 - WheelPos * 3;
   }
   return c;
-}
-
-// Delay without stopping processes
-void blynk_delay(int milli) {
-  int end = millis() + milli;
-  while (millis() < end) {
-    Blynk.run();
-  }
 }
