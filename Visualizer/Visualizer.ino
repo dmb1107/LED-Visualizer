@@ -3,6 +3,7 @@
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
 #include "FastLED.h"
+#include "arduinoFFT.h"
 
 #define NUM_LEDS 60
 #define LED_PIN 5
@@ -22,6 +23,21 @@
 #define FALL 2
 #define RAINBOW 3
 
+// Music Modes
+#define VOLUME 1
+#define FREQ_1 2
+
+// Sampling
+#define SAMPLES 256             //Must be a power of 2
+#define SAMPLING_FREQUENCY 10000 //Hz, must be less than 10000 due to ADC
+const int sampleWindow = 50; // Sample window width in mS (50 mS = 20Hz)
+unsigned int sample;
+arduinoFFT FFT = arduinoFFT();
+double vReal[SAMPLES];
+double vImag[SAMPLES];
+unsigned int sampling_period_us;
+unsigned long microseconds;
+
 // LED strip
 CRGB leds[NUM_LEDS];
 
@@ -31,6 +47,7 @@ int r, g, b;
 // Default mode and wave-mode values
 int mode = OFF;
 int waveMode = FLOW; // Wave sub-mode
+int musicMode = VOLUME; // Music sub-mode
 
 // Blynk auth
 char auth[] = "KDzz0yZ-CWm38Xll10KSb6lqGKLIuKMs";
@@ -38,10 +55,6 @@ char auth[] = "KDzz0yZ-CWm38Xll10KSb6lqGKLIuKMs";
 // WiFi credentials
 char ssid[] = "A Hint of Lime 2.4GHz";
 char pass[] = "BeIrJoMaOl69420";
-
-//Microphone Settings
-const int sampleWindow = 50; // Sample window width in mS (50 mS = 20Hz)
-unsigned int sample;
 
 void setup()
 {
@@ -53,6 +66,8 @@ void setup()
 
   // Connect to Blynk
   Blynk.begin(auth, ssid, pass);
+
+  sampling_period_us = round(1000000 * (1.0 / SAMPLING_FREQUENCY));
 }
 
 void loop()
@@ -106,31 +121,27 @@ void waves() {
 
 // Music mode
 void musicReactive() {
-  unsigned long startMillis = millis(); // Start of sample window
-  unsigned int peakToPeak = 0;   // peak-to-peak level
-
-  unsigned int signalMax = 0;
-  unsigned int signalMin = 1024;
-
-  // Collect data for 50 mS
-  while (millis() - startMillis < sampleWindow)  {
-    sample = analogRead(MIC_PIN);
-    blynk_delay(4);    //Need this delay otherwise esp8266 gets locked up.
-    if (mode != MUSIC) {
-      return;
-    }
-    yield();
-    if (sample < 1024)  {
-      if (sample > signalMax) {
-        signalMax = sample;  // save just the max levels
-      }
-      else if (sample < signalMin) {
-        signalMin = sample;  // save just the min levels
-      }
-    }
+  switch (musicMode) {
+    case VOLUME:
+      volume();
+      break;
+    case FREQ_1:
+      freq_1();
+      break;
   }
-  peakToPeak = signalMax - signalMin;  // max - min = peak-peak amplitude
-  double volts = (peakToPeak * 5.0) / 1024;  // convert to volts
+}
+
+/*
+   Section: Music Modes
+*/
+
+// Music mode -> volume
+void volume() {
+  double volts = readMic();
+  if (volts == -1) {
+    return;
+  }
+  Serial.println(volts);
   double pixelNum = (NUM_LEDS / 4.95) * volts; // 4.95 is max volts, so normalize to NUM_LEDS
 
   // Cap at 60 just in case
@@ -149,6 +160,76 @@ void musicReactive() {
   }
 
   FastLED.show();
+}
+
+// Music mode -> freq_1
+void freq_1() {
+  for (int i = 0; i < SAMPLES; i++)
+  {
+    microseconds = micros();    //Overflows after around 70 minutes!
+
+    vReal[i] = analogRead(0);
+    vImag[i] = 0;
+
+    while (micros() < (microseconds + sampling_period_us)) {
+    }
+  }
+
+  /*FFT*/
+  FFT.Windowing(vReal, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(vReal, vImag, SAMPLES, FFT_FORWARD);
+  FFT.ComplexToMagnitude(vReal, vImag, SAMPLES);
+
+  int countB = 0;
+  int countM = 0;
+  int countH = 0;
+    
+  for (int i = 2; i < (SAMPLES / 2); i++)
+  {
+    yield();
+    if(mode != MUSIC && musicMode != FREQ_1) return;
+    double frequency = (i * 1.0 * SAMPLING_FREQUENCY) / SAMPLES;
+    
+    if(vReal[i] > 500){
+      if(frequency > 50 && frequency < 80){
+        countB++;
+        double val = vReal[i] / 2000.0;
+        freq_1_Band(0, (int)(val * 30));
+      } else if(frequency > 150 && frequency < 2000){
+        // TODO: Find peak vReal in frequency range and only display band on that one
+        countM++;
+        double val = vReal[i] / 2000.0;
+        freq_1_Band(1, (int)(val * 27));
+      }
+      else if(frequency > 2000){
+        if(vReal[i] > 15000){
+          countH++;
+          freq_1_Band(2, 3);
+        }
+      }
+    }
+  }
+  if(countB == 0){
+    for(int i = 3; i < 30; i++){
+      leds[i] = CRGB::Black;
+    }
+  }
+  if(countM == 0){
+    for(int i = 30; i < NUM_LEDS - 3; i++){
+      leds[i] = CRGB::Black;
+    }
+  }
+  if(countH == 0){
+    leds[0] = CRGB::Black;
+    leds[1] = CRGB::Black;
+    leds[2] = CRGB::Black;
+    
+    leds[NUM_LEDS - 1] = CRGB::Black;
+    leds[NUM_LEDS - 2] = CRGB::Black;
+    leds[NUM_LEDS - 3] = CRGB::Black;
+  }
+  FastLED.show();
+  blynk_delay(4);
 }
 
 /*
@@ -265,6 +346,11 @@ BLYNK_WRITE(V1) {
   waveMode = param.asInt();
 }
 
+// Music-Mode Picker
+BLYNK_WRITE(V4) {
+  musicMode = param.asInt();
+}
+
 // RGB Control
 BLYNK_WRITE(V3) {
   if (mode == STATIC) {
@@ -295,6 +381,67 @@ void blynk_delay(int milli) {
 // Sets all LEDS to given color, Not displayed
 void setAllLEDS(int red, int green, int blue) {
   fill_solid(leds, NUM_LEDS, CRGB(red, green, blue));
+}
+
+// Reads mic sample and returns voltage
+// If mode is changed during execution, returns -1
+double readMic() {
+  unsigned long startMillis = millis(); // Start of sample window
+  unsigned int peakToPeak = 0;   // peak-to-peak level
+
+  unsigned int signalMax = 0;
+  unsigned int signalMin = 1024;
+
+  // Collect data for 50 mS
+  while (millis() - startMillis < sampleWindow)  {
+    sample = analogRead(MIC_PIN);
+    blynk_delay(4);    //Need this delay otherwise esp8266 gets locked up.
+    if (mode != MUSIC) {
+      return -1;
+    }
+    yield();
+    if (sample < 1024)  {
+      if (sample > signalMax) {
+        signalMax = sample;  // save just the max levels
+      }
+      else if (sample < signalMin) {
+        signalMin = sample;  // save just the min levels
+      }
+    }
+  }
+  peakToPeak = signalMax - signalMin;  // max - min = peak-peak amplitude
+  double volts = (peakToPeak * 5.0) / 1024;  // convert to volts
+  return volts;
+}
+
+void freq_1_Band(int band, int len){
+  if(band == 0){
+    if(len > 27) len = 27;
+    for(int i = 3; i < 30; i++){
+      if(i > len){
+        leds[i] = CRGB::Blue;
+      } else {
+        leds[i] = CRGB::Black;
+      }
+    }
+  } else if(band == 1){
+    if(len > 27) len = 27;
+    for(int i = 30; i < NUM_LEDS - 3; i++){
+      if(i < 20 + len){
+        leds[i] = CRGB::Green;
+      } else {
+        leds[i] = CRGB::Black;
+      }
+    }
+  } else {
+    leds[0] = CRGB::White;
+    leds[1] = CRGB::White;
+    leds[2] = CRGB::White;
+    
+    leds[NUM_LEDS - 1] = CRGB::White;
+    leds[NUM_LEDS - 2] = CRGB::White;
+    leds[NUM_LEDS - 3] = CRGB::White;
+  }
 }
 
 // Color wheel
