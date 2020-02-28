@@ -26,6 +26,14 @@
 // Music Modes
 #define VOLUME 1
 #define FREQ_1 2
+#define CENTER 3
+
+// VU meter stuff
+#define NOISE 10            // Noise/hum/interference in mic signal
+#define TOP (NUM_LEDS + 2)  // Allow dot to go slightly off scale
+#define PEAK_FALL 20        //Rate of falling peak dot
+#define VU_SAMPLES 60          // Length of buffer for dynamic level adjustment
+#define SPEED .20           // Amount to increment RGB color by each cycle
 
 // Sampling
 #define SAMPLES 256             //Must be a power of 2
@@ -36,6 +44,17 @@ double vReal[SAMPLES]; // Holds real parts of FFT bins
 double vImag[SAMPLES]; // Holds imaginary parts of FFT bins
 unsigned int sampling_period_us;
 unsigned long microseconds;
+
+// VU meter stuff
+int lvl = 10;
+int minLvlAvg = 0; // For dynamic adjustment of graph low & high
+int maxLvlAvg = 512;
+byte peak = 16; // Peak level of column; used for falling dots
+float greenOffset = 30;
+float blueOffset = 150;
+byte dotCount = 0;     //Frame counter for peak dot
+int vol[VU_SAMPLES];  // Collection of prior volume samples
+byte volCount = 0; // Frame counter for storing past volume data
 
 arduinoFFT FFT = arduinoFFT();
 
@@ -128,6 +147,9 @@ void musicReactive() {
       break;
     case FREQ_1:
       freq_1();
+      break;
+    case CENTER:
+      rainbow_center();
       break;
   }
 }
@@ -244,6 +266,115 @@ void freq_1() {
 
   FastLED.show();
   blynk_delay(4);
+}
+
+void rainbow_center()
+{
+  uint8_t i;
+  uint16_t minLvl, maxLvl;
+  int n, height;
+
+  n = analogRead(MIC_PIN);            // Raw reading from mic
+  n = abs(n - 512);       // Center on zero
+  Serial.println(n);
+  n = (n <= NOISE) ? 0 : (n - NOISE); // Remove noise/hum
+  lvl = ((lvl * 7) + n) >> 3;         // "Dampened" reading (else looks twitchy)
+
+  // Calculate bar height based on dynamic min/max levels (fixed point):
+  height = TOP * (lvl - minLvlAvg) / (long)(maxLvlAvg - minLvlAvg);
+
+  if (height < 0L)
+    height = 0; // Clip output
+  else if (height > TOP)
+    height = TOP;
+  if (height > peak)
+    peak = height; // Keep 'peak' dot at top
+  greenOffset += SPEED;
+  blueOffset += SPEED;
+  if (greenOffset >= 255)
+    greenOffset = 0;
+  if (blueOffset >= 255)
+    blueOffset = 0;
+
+  // Color pixels based on rainbow gradient
+  for (i = 0; i < NUM_LEDS / 2; i++)
+  {
+    if (i >= height)
+    {
+      leds[NUM_LEDS / 2 - i - 1] = CRGB::Black;
+      leds[NUM_LEDS / 2 + i] = CRGB::Black;
+    }
+    else
+    {
+      CRGB color = vu_wheel(map(i, 0, NUM_LEDS / 2 - 1, (int)greenOffset, (int)blueOffset));
+      leds[NUM_LEDS / 2 - i - 1] = color;
+      leds[NUM_LEDS / 2 + i] = color;
+    }
+  }
+
+  // Draw peak dot
+  if (peak > 0 && peak <= NUM_LEDS / 2 - 1)
+  {
+    CRGB color = vu_wheel(map(peak, 0, NUM_LEDS / 2 - 1, 30, 150));
+    leds[NUM_LEDS / 2 - peak - 1] = color;
+    leds[NUM_LEDS / 2 + peak] = color;
+  }
+
+  FastLED.show(); // Update strip
+
+  // Every few frames, make the peak pixel drop by 1:
+
+  if (++dotCount >= PEAK_FALL)
+  { //fall rate
+
+    if (peak > 0)
+      peak--;
+    dotCount = 0;
+  }
+
+  vol[volCount] = n; // Save sample for dynamic leveling
+  if (++volCount >= VU_SAMPLES)
+    volCount = 0; // Advance/rollover sample counter
+
+  // Get volume range of prior frames
+  minLvl = maxLvl = vol[0];
+  for (i = 1; i < VU_SAMPLES; i++)
+  {
+    if (vol[i] < minLvl)
+      minLvl = vol[i];
+    else if (vol[i] > maxLvl)
+      maxLvl = vol[i];
+  }
+  // minLvl and maxLvl indicate the volume range over prior frames, used
+  // for vertically scaling the output graph (so it looks interesting
+  // regardless of volume level).  If they're too close together though
+  // (e.g. at very low volume levels) the graph becomes super coarse
+  // and 'jumpy'...so keep some minimum distance between them (this
+  // also lets the graph go to zero when no sound is playing):
+  if ((maxLvl - minLvl) < TOP)
+    maxLvl = minLvl + TOP;
+  minLvlAvg = (minLvlAvg * 63 + minLvl) >> 6; // Dampen min/max levels
+  maxLvlAvg = (maxLvlAvg * 63 + maxLvl) >> 6; // (fake rolling average)
+}
+
+// Input a value 0 to 255 to get a color value.
+// The colors are a transition r - g - b - back to r.
+CRGB vu_wheel(byte WheelPos)
+{
+  if (WheelPos < 85)
+  {
+    return CRGB(WheelPos * 3, 255 - WheelPos * 3, 0);
+  }
+  else if (WheelPos < 170)
+  {
+    WheelPos -= 85;
+    return CRGB(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  else
+  {
+    WheelPos -= 170;
+    return CRGB(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
 }
 
 /*
