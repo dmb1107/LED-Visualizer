@@ -274,14 +274,15 @@ void rainbow_center()
   uint16_t minLvl, maxLvl;
   int n, height;
 
-  n = analogRead(MIC_PIN);            // Raw reading from mic
-  n = abs(n - 512);       // Center on zero
-  Serial.println(n);
-  n = (n <= NOISE) ? 0 : (n - NOISE); // Remove noise/hum
-  lvl = ((lvl * 7) + n) >> 3;         // "Dampened" reading (else looks twitchy)
+  double volts = readMic();            // Raw reading from mic
+//  Serial.println(volts);
+//  n = sample;
+//  n = (n <= NOISE) ? 0 : (n - NOISE); // Remove noise/hum
+//  lvl = ((lvl * 7) + n) >> 3;         // "Dampened" reading (else looks twitchy)
 
   // Calculate bar height based on dynamic min/max levels (fixed point):
-  height = TOP * (lvl - minLvlAvg) / (long)(maxLvlAvg - minLvlAvg);
+//  height = TOP * (lvl - minLvlAvg) / (long)(maxLvlAvg - minLvlAvg);
+  height = TOP * volts;
 
   if (height < 0L)
     height = 0; // Clip output
