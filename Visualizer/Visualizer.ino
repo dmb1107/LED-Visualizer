@@ -1,9 +1,12 @@
 #define FASTLED_ESP8266_RAW_PIN_ORDER
 
+#include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
 #include "FastLED.h"
 #include "arduinoFFT.h"
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 #define NUM_LEDS 60
 #define LED_PIN 5 // D1 on ESP8266
@@ -22,6 +25,8 @@
 #define FLOW 1
 #define FALL 2
 #define RAINBOW 3
+#define CHRISTMAS 4
+#define COTTONCANDY 5
 
 // Music Modes
 #define VOLUME 1
@@ -75,6 +80,13 @@ char auth[] = "KDzz0yZ-CWm38Xll10KSb6lqGKLIuKMs";
 // WiFi credentials
 char ssid[] = "A Hint of Lime 2.4GHz";
 char pass[] = "BeIrJoMaOl69420";
+
+// Timer
+const long utcOffsetInSeconds = -18000; // EST time zone
+long startSeconds, stopSeconds;
+BlynkTimer timer;
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
 
 void setup()
 {
@@ -136,6 +148,12 @@ void waves() {
     case RAINBOW:
       rainbowCycle(5);
       break;
+    case CHRISTMAS:
+      christmas(50);
+      break;
+    case COTTONCANDY:
+      cottonCandy(50);
+      break;
   }
 }
 
@@ -165,7 +183,7 @@ void volume() {
   if (volts == -1) {
     return;
   }
-  
+
   double pixelNum = (NUM_LEDS / 4.95) * volts; // 4.95 is max volts, so normalize to NUM_LEDS
 
   // Cap at 60 just in case
@@ -188,7 +206,7 @@ void volume() {
 
 // Music mode -> freq_1
 void freq_1() {
-  
+
   fft_sample();
 
   // FFT
@@ -201,28 +219,28 @@ void freq_1() {
   int countB = 0;
   int countM = 0;
   int countH = 0;
-  
+
   // Loop through bins
   for (int i = 2; i < (SAMPLES / 2); i++) {
     yield();
-    if(mode != MUSIC && musicMode != FREQ_1) return;
+    if (mode != MUSIC && musicMode != FREQ_1) return;
 
     // Frequency is used to make code easier to understand
     double frequency = (i * 1.0 * SAMPLING_FREQUENCY) / SAMPLES;
-    
+
     // Filter out noise (lower magnitudes)
-    if(vReal[i] > 500){
+    if (vReal[i] > 500) {
 
       // Bass frequencies
-      if(frequency > 50 && frequency < 80){
+      if (frequency > 50 && frequency < 80) {
         countB++;
         // 2000 is an arbitrary number
         // TODO: Change number
         double val = vReal[i] / 2000.0;
         // Set band 0 to the percentage * LED number
         freq_1_Band(0, (int)(val * 30));
-      // Mid frequencies
-      } else if(frequency > 150 && frequency < 2000){
+        // Mid frequencies
+      } else if (frequency > 150 && frequency < 2000) {
         // TODO: Find peak vReal in frequency range and only display band on that one
         countM++;
         // 2000 is an arbitrary number
@@ -230,10 +248,10 @@ void freq_1() {
         double val = vReal[i] / 2000.0;
         // Set band 1 to the percentage * LED number
         freq_1_Band(1, (int)(val * 27));
-      // High frequencies
-      } else if(frequency > 2000){
+        // High frequencies
+      } else if (frequency > 2000) {
         // Remove more noise
-        if(vReal[i] > 15000){
+        if (vReal[i] > 15000) {
           countH++;
           // Set band 2 to have all 3 LEDS lit
           freq_1_Band(2, 3);
@@ -242,22 +260,22 @@ void freq_1() {
     }
   }
   // Check if any frequencies weren't detected and clear the bands
-  if(countB == 0){
-    for(int i = 3; i < 30; i++){
+  if (countB == 0) {
+    for (int i = 3; i < 30; i++) {
       leds[i] = CRGB::Black;
     }
   }
-  if(countM == 0){
-    for(int i = 30; i < NUM_LEDS - 3; i++){
+  if (countM == 0) {
+    for (int i = 30; i < NUM_LEDS - 3; i++) {
       leds[i] = CRGB::Black;
     }
   }
-  if(countH == 0){
+  if (countH == 0) {
     // Bottom LEDs
     leds[0] = CRGB::Black;
     leds[1] = CRGB::Black;
     leds[2] = CRGB::Black;
-    
+
     // Top LEDs
     leds[NUM_LEDS - 1] = CRGB::Black;
     leds[NUM_LEDS - 2] = CRGB::Black;
@@ -275,13 +293,13 @@ void rainbow_center()
   int n, height;
 
   double volts = readMic();            // Raw reading from mic
-//  Serial.println(volts);
-//  n = sample;
-//  n = (n <= NOISE) ? 0 : (n - NOISE); // Remove noise/hum
-//  lvl = ((lvl * 7) + n) >> 3;         // "Dampened" reading (else looks twitchy)
+  //  Serial.println(volts);
+  //  n = sample;
+  //  n = (n <= NOISE) ? 0 : (n - NOISE); // Remove noise/hum
+  //  lvl = ((lvl * 7) + n) >> 3;         // "Dampened" reading (else looks twitchy)
 
   // Calculate bar height based on dynamic min/max levels (fixed point):
-//  height = TOP * (lvl - minLvlAvg) / (long)(maxLvlAvg - minLvlAvg);
+  //  height = TOP * (lvl - minLvlAvg) / (long)(maxLvlAvg - minLvlAvg);
   height = TOP * volts;
 
   if (height < 0L)
@@ -475,6 +493,18 @@ void flow() {
   }
 }
 
+// Wave Mode -> Christmas
+void christmas(int speedDelay) {
+  colorWipe(0x00,0x64,0x00, speedDelay);
+  colorWipe(0xd7,0x00,0x00, speedDelay);
+}
+
+// Wave Mode -> Cotton Candy
+void cottonCandy(int speedDelay){
+  colorWipe(0xBB,0x25,0x28, speedDelay);
+  colorWipe(0x16,0x5B,0x33, speedDelay);
+}
+
 /*
   Section: Blynk
 */
@@ -493,6 +523,7 @@ BLYNK_WRITE(V1) {
   waveMode = param.asInt();
 }
 
+
 // Music-Mode Picker
 BLYNK_WRITE(V4) {
   musicMode = param.asInt();
@@ -500,7 +531,7 @@ BLYNK_WRITE(V4) {
 
 // RGB Control
 BLYNK_WRITE(V3) {
-  // Only enable RGB control in static mode 
+  // Only enable RGB control in static mode
   if (mode == STATIC) {
     r = param[0].asInt();
     g = param[1].asInt();
@@ -562,7 +593,7 @@ double readMic() {
   return volts;
 }
 
-void fft_sample(){
+void fft_sample() {
   for (int i = 0; i < SAMPLES; i++) {
     microseconds = micros();    //Overflows after around 70 minutes!
 
@@ -576,20 +607,20 @@ void fft_sample(){
   }
 }
 
-void freq_1_Band(int band, int len){
-  if(band == 0){
-    if(len > 27) len = 27;
-    for(int i = 3; i < 30; i++){
-      if(i > len){
+void freq_1_Band(int band, int len) {
+  if (band == 0) {
+    if (len > 27) len = 27;
+    for (int i = 3; i < 30; i++) {
+      if (i > len) {
         leds[i] = CRGB::Blue;
       } else {
         leds[i] = CRGB::Black;
       }
     }
-  } else if(band == 1){
-    if(len > 27) len = 27;
-    for(int i = 30; i < NUM_LEDS - 3; i++){
-      if(i < 20 + len){
+  } else if (band == 1) {
+    if (len > 27) len = 27;
+    for (int i = 30; i < NUM_LEDS - 3; i++) {
+      if (i < 20 + len) {
         leds[i] = CRGB::Green;
       } else {
         leds[i] = CRGB::Black;
@@ -599,7 +630,7 @@ void freq_1_Band(int band, int len){
     leds[0] = CRGB::White;
     leds[1] = CRGB::White;
     leds[2] = CRGB::White;
-    
+
     leds[NUM_LEDS - 1] = CRGB::White;
     leds[NUM_LEDS - 2] = CRGB::White;
     leds[NUM_LEDS - 3] = CRGB::White;
@@ -625,4 +656,17 @@ byte * Wheel(byte WheelPos) {
     c[2] = 255 - WheelPos * 3;
   }
   return c;
+}
+
+
+// Wave of a color from bottom to top of strip. Modified from: https://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#LEDStripEffectColorWipe
+void colorWipe(byte red, byte green, byte blue, int speedDelay){
+  for(uint16_t i=0; i<NUM_LEDS; i++) {
+    leds[i] = CRGB(red, green, blue);
+    FastLED.show();
+    blynk_delay(speedDelay);
+    if (mode != WAVES || (waveMode != CHRISTMAS && waveMode != COTTONCANDY)) {
+      return;
+    }
+  }
 }
