@@ -7,6 +7,7 @@
 #include "arduinoFFT.h"
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include "credentials.h"
 
 #define NUM_LEDS 60
 #define LED_PIN 5 // D1 on ESP8266
@@ -78,8 +79,8 @@ int musicMode = VOLUME; // Music sub-mode
 char auth[] = "KDzz0yZ-CWm38Xll10KSb6lqGKLIuKMs";
 
 // WiFi credentials
-char ssid[] = "A Hint of Lime 2.4GHz";
-char pass[] = "BeIrJoMaOl69420";
+char ssid[] = WIFI_SSID;
+char pass[] = WIFI_PASS;
 
 // Timer
 const long utcOffsetInSeconds = -18000; // EST time zone
@@ -496,13 +497,25 @@ void flow() {
 // Wave Mode -> Christmas
 void christmas(int speedDelay) {
   colorWipe(0x00,0x64,0x00, speedDelay);
+  if (mode != WAVES || waveMode != CHRISTMAS) {
+    return;
+  }
   colorWipe(0xd7,0x00,0x00, speedDelay);
+  if (mode != WAVES || waveMode != CHRISTMAS) {
+    return;
+  }
 }
 
 // Wave Mode -> Cotton Candy
 void cottonCandy(int speedDelay){
   colorWipe(0xBB,0x25,0x28, speedDelay);
+  if (mode != WAVES || waveMode != COTTONCANDY) {
+    return;
+  }
   colorWipe(0x16,0x5B,0x33, speedDelay);
+  if (mode != WAVES || waveMode != COTTONCANDY) {
+    return;
+  }
 }
 
 /*
@@ -665,8 +678,5 @@ void colorWipe(byte red, byte green, byte blue, int speedDelay){
     leds[i] = CRGB(red, green, blue);
     FastLED.show();
     blynk_delay(speedDelay);
-    if (mode != WAVES || (waveMode != CHRISTMAS && waveMode != COTTONCANDY)) {
-      return;
-    }
   }
 }
