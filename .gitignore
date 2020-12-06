@@ -63,6 +63,7 @@ avr-toolchain-*.zip
 /arduino-core/nbproject/private/
 /app/build/
 /arduino-core/build/
+Visualizer/credentials.h
 
 manifest.mf
 nbbuild.xml
